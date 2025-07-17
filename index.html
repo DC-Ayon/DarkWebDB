@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Elasticsearch User Manager</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 30px;
+      max-width: 700px;
+      margin: auto;
+    }
+
+    input, button {
+      padding: 8px;
+      margin: 5px;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    ul {
+      list-style: none;
+      padding: 0;
+    }
+
+    li {
+      background: #f9f9f9;
+      margin: 10px 0;
+      padding: 10px;
+      border-radius: 6px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+
+    .search-bar {
+      margin-bottom: 20px;
+    }
+  </style>
+</head>
+<body>
+
+  <h2> User Manager (email:password)</h2>
+
+  <div class="search-bar">
+    <input id="searchQuery" placeholder="Search by email..." />
+    <button onclick="searchUsers()"> Search</button>
+    <button onclick="loadUsers()">🔄 Reset</button>
+  </div>
+
+  <ul id="userList"></ul>
+
+  <h3>Add /  Update User</h3>
+  <input id="uid" placeholder="User ID (leave empty to add)" />
+  <input id="email" placeholder="Email" />
+  <input id="password" placeholder="Password" />
+  <button onclick="saveUser()">Save</button>
+
+  <script>
+    const API = 'http://localhost:3001';
+
+    async function loadUsers() {
+      const res = await fetch(`${API}/users`);
+      const data = await res.json();
+      renderUsers(data);
+    }
+
+    async function searchUsers() {
+      const query = document.getElementById('searchQuery').value.trim();
+      if (!query) {
+        alert('Please enter an email to search.');
+        return;
+      }
+
+      const res = await fetch(`${API}/users/search?q=${encodeURIComponent(query)}`);
+      const data = await res.json();
+      renderUsers(data);
+    }
+
+    function renderUsers(users) {
+      const ul = document.getElementById('userList');
+      ul.innerHTML = '';
+      if (users.length === 0) {
+        ul.innerHTML = '<li>No users found.</li>';
+        return;
+      }
+
+      users.forEach(user => {
+        const li = document.createElement('li');
+        li.innerHTML = `
+          <b>ID:</b> ${user.id}<br/>
+          <b>Email:</b> ${user.email}<br/>
+          <b>Password:</b> ${user.password}<br/>
+          <button onclick="editUser('${user.id}', '${user.email}', '${user.password}')">✏️ Edit</button>
+          <button onclick="deleteUser('${user.id}')">🗑️ Delete</button>
+        `;
+        ul.appendChild(li);
+      });
+    }
+
+    function editUser(id, email, password) {
+      document.getElementById('uid').value = id;
+      document.getElementById('email').value = email;
+      document.getElementById('password').value = password;
+    }
+
+    async function saveUser() {
+      const id = document.getElementById('uid').value.trim();
+      const email = document.getElementById('email').value.trim();
+      const password = document.getElementById('password').value.trim();
+
+      if (!email || !password) {
+        alert('Email and password cannot be empty.');
+        return;
+      }
+
+      const method = id ? 'PUT' : 'POST';
+      const url = id ? `${API}/users/${id}` : `${API}/users`;
+
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
+
+      const result = await res.json();
+      if (result.success) {
+        alert(' User saved.');
+        clearForm();
+        loadUsers();
+      } else {
+        alert(' Failed to save user.');
+      }
+    }
+
+    async function deleteUser(id) {
+      if (!confirm('Are you sure you want to delete this user?')) return;
+
+      const res = await fetch(`${API}/users/${id}`, {
+        method: 'DELETE'
+      });
+
+      const result = await res.json();
+      if (result.success) {
+        alert(' User deleted.');
+        loadUsers();
+      } else {
+        alert(' Failed to delete user.');
+      }
+    }
+
+    function clearForm() {
+      document.getElementById('uid').value = '';
+      document.getElementById('email').value = '';
+      document.getElementById('password').value = '';
+    }
+
+    
+  loadUsers();
+  </script>
+
+</body>
+</html>
