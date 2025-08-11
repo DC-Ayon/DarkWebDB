@@ -8,7 +8,7 @@ const esClient = new Client({
   node: 'https://localhost:9200',
   auth: {
     username: 'elastic',
-    password: 'f1KxdjdqCZ7jEfjiMpFg'
+    password: '4Z8dmNpBVRXY2yBTjRiT'
   },
   tls: {
     rejectUnauthorized: false 
@@ -38,4 +38,4 @@ async function injectFromTxt(filePath) {
   console.log('✅ Encrypted Elasticsearch injection complete');
 }
 
-injectFromTxt('D:\\INTERN\\DarkWebTeam_Databases\\Ritesh Jha\\RiteshJha-DB4-(6L)Email&Passwords.txt');
+injectFromTxt('D:\\HARSH\\2025\\Darkwebproject\\DarkWebTeam_Databases\\Ritesh Jha\\RiteshJha-DB4-(6L)Email&Passwords.txt');
