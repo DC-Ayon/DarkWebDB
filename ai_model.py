@@ -2,11 +2,66 @@ import os
 import re
 import json
 import argparse
+import zipfile
+import tarfile
+import tempfile
+import shutil
+import subprocess
+import sys
 from datetime import datetime
 from typing import List, Dict, Any
-import pandas as pd
+
+def safe_import(package_name, import_name=None):
+    import_name = import_name or package_name
+    try:
+        return __import__(import_name)
+    except ImportError:
+        print(f"[!] Installing missing package: {package_name}")
+        subprocess.check_call([sys.executable, "-m", "pip", "install", package_name])
+        return __import__(import_name)
+
+# Import external modules with auto-install
+pd = safe_import("pandas")
+patoolib = safe_import("patool", "patoolib")
 from tqdm import tqdm
 from transformers import pipeline
+
+def is_supported_file(file_path: str) -> bool:
+    supported_extensions = [
+        ".csv", ".xlsx", ".xls", ".json", ".txt", ".pptx", ".pdf", ".doc", ".docx", ".html", ".htm", ".sql", ".data", ".anom"
+    ]
+    return any(file_path.lower().endswith(ext) for ext in supported_extensions)
+
+def is_archive(file_path: str) -> bool:
+    archive_exts = [".zip", ".tar", ".tar.gz", ".tgz", ".rar", ".7z"]
+    return any(file_path.lower().endswith(ext) for ext in archive_exts)
+
+def extract_archive(file_path: str) -> str:
+    temp_dir = tempfile.mkdtemp()
+    try:
+        if file_path.lower().endswith(".zip"):
+            with zipfile.ZipFile(file_path, 'r') as zip_ref:
+                zip_ref.extractall(temp_dir)
+        elif file_path.lower().endswith((".tar", ".tar.gz", ".tgz")):
+            with tarfile.open(file_path, 'r:*') as tar_ref:
+                tar_ref.extractall(temp_dir)
+        else:
+            patoolib.extract_archive(file_path, outdir=temp_dir, verbosity=-1)
+    except Exception as e:
+        print(f"[✗] Failed to extract archive {file_path}: {e}")
+        shutil.rmtree(temp_dir)
+        return None
+    return temp_dir
+
+def try_encodings(file_path, encodings=["utf-8", "latin1", "windows-1252", "ISO-8859-1"]) -> str:
+    for enc in encodings:
+        try:
+            with open(file_path, "r", encoding=enc, errors='strict') as f:
+                return f.read()
+        except UnicodeDecodeError:
+            continue
+    print(f"[✗] Could not decode {file_path} with known encodings.")
+    return None
 
 def load_files_from_paths(paths: List[str]) -> List[str]:
     return list(paths)
@@ -107,9 +162,11 @@ def make_json_serializable(obj):
     else:
         return obj
 
-def export_output_per_file(results: List[Dict[str, Any]], output_format: str = 'json'):
-    """Export processing results to individual files in specified format"""
+def export_output_per_file(results: List[Dict[str, Any]], output_format: str = 'json', output_dir: str = None):
+    """Export processing results to individual files in specified format and output directory"""
     import pandas as pd
+    import os
+    output_dir = output_dir or os.getcwd()
     
     # STEP 1: Process each result file
     for result in results:
@@ -117,19 +174,16 @@ def export_output_per_file(results: List[Dict[str, Any]], output_format: str = '
         base, _ = os.path.splitext(input_name)
         content = result["content"]
         
-        # STEP 2a: Export as JSON format
+        # Compose output path
         if output_format == 'json':
-            output_file = f"{base}.json"
+            output_file = os.path.join(output_dir, f"{base}.json")
             serializable_data = make_json_serializable(result)
             with open(output_file, "w", encoding="utf-8") as f:
                 json.dump(serializable_data, f, ensure_ascii=False, indent=2)
             print(f"[+] Output written to {output_file}")
-        
-        # STEP 2b: Export as CSV format
         elif output_format == 'csv':
-            output_file = f"{base}.csv"
+            output_file = os.path.join(output_dir, f"{base}.csv")
             try:
-                # STEP 2b-i: Handle structured data (lists/dicts)
                 from pandas import json_normalize
                 if isinstance(content, list) and all(isinstance(row, dict) for row in content):
                     df = json_normalize(content)
@@ -138,7 +192,6 @@ def export_output_per_file(results: List[Dict[str, Any]], output_format: str = '
                     df = json_normalize([content])
                     df.to_csv(output_file, index=False, encoding="utf-8")
                 else:
-                    # STEP 2b-ii: Handle plain text content
                     with open(output_file, "w", encoding="utf-8") as f:
                         f.write("file_name,content\n")
                         safe_content = str(content).replace('"', '""').replace('\n', ' ').replace('\r', '')
@@ -151,52 +204,69 @@ def export_output_per_file(results: List[Dict[str, Any]], output_format: str = '
             print(f"[+] Output written to {output_file}")
 
 
-def main(files: List[str], output_format: str = "json"):
+def main(files: List[str], output_format: str = "json", output_dir: str = None):
     # STEP 1: Load and validate input files
     files = load_files_from_paths(files)
     if not files:
         print(f"[!] No supported files selected.")
         return
-    
-    # STEP 2: Initialize NER pipeline for entity extraction
+
+    # STEP 2: Expand archives and collect all files
+    all_files = []
+    for f in files:
+        if is_archive(f):
+            extracted_dir = extract_archive(f)
+            if extracted_dir:
+                for root, _, filenames in os.walk(extracted_dir):
+                    for name in filenames:
+                        full_path = os.path.join(root, name)
+                        if is_supported_file(full_path):
+                            all_files.append(full_path)
+        elif is_supported_file(f):
+            all_files.append(f)
+
+    if not all_files:
+        print("[!] No supported files found after archive extraction.")
+        return
+
+    # STEP 3: Initialize NER pipeline for entity extraction
     print("[+] Loading HuggingFace NER pipeline...")
     ner_pipe = pipeline("ner", grouped_entities=True)
-    
-    # STEP 3: Initialize results container
+
+    # STEP 4: Initialize results container
     results = []
-    
-    # STEP 4: Process each file based on its format
-    for fpath in tqdm(files, desc="Processing files"):
+
+    # STEP 5: Process each file based on its format
+    for fpath in tqdm(all_files, desc="Processing files"):
         try:
-            # STEP 4a: Determine file extension for format-specific processing
             ext = os.path.splitext(fpath)[1].lower()
-            
-            # STEP 4b: Handle CSV files
+            content = None
+            # CSV
             if ext == '.csv':
                 try:
                     df = pd.read_csv(fpath, dtype=str, keep_default_na=False, on_bad_lines='skip')
                     content = df.to_dict(orient='records')
                 except Exception as e:
                     content = f"[Error reading CSV: {e}]"
-            
-            # STEP 4c: Handle Excel files
-            elif ext == '.xlsx':
+            # Excel
+            elif ext in ('.xlsx', '.xls'):
                 try:
                     df = pd.read_excel(fpath, dtype=str)
                     content = df.fillna('').to_dict(orient='records')
                 except Exception as e:
-                    content = f"[Error reading XLSX: {e}]"
-            
-            # STEP 4d: Handle JSON files
+                    content = f"[Error reading Excel: {e}]"
+            # JSON
             elif ext == '.json':
-                import json as js
                 try:
                     with open(fpath, 'r', encoding='utf-8', errors='ignore') as f:
-                        content = js.load(f)
+                        content = json.load(f)
                 except Exception as e:
                     content = f"[Error reading JSON: {e}]"
-            
-            # STEP 4e: Handle PowerPoint files
+            # TXT
+            elif ext == '.txt':
+                txt_content = try_encodings(fpath)
+                content = txt_content if txt_content else ""
+            # PPTX
             elif ext == '.pptx':
                 try:
                     from pptx import Presentation
@@ -211,8 +281,7 @@ def main(files: List[str], output_format: str = "json"):
                     content = "\n---\n".join(slides_text)
                 except Exception as e:
                     content = f"[Error reading pptx: {e}]"
-            
-            # STEP 4f: Handle PDF files
+            # PDF
             elif ext == '.pdf':
                 try:
                     import PyPDF2
@@ -223,8 +292,7 @@ def main(files: List[str], output_format: str = "json"):
                     content = "[PyPDF2 not installed. Cannot extract PDF text.]"
                 except Exception as e:
                     content = f"[Error reading PDF: {e}]"
-            
-            # STEP 4g: Handle Word documents
+            # DOC/DOCX
             elif ext in ['.doc', '.docx']:
                 try:
                     import docx
@@ -234,15 +302,14 @@ def main(files: List[str], output_format: str = "json"):
                     content = "[python-docx not installed. Cannot extract DOCX text.]"
                 except Exception as e:
                     content = f"[Error reading DOC/DOCX: {e}]"
-            # STEP 4h: Handle HTML files
+            # HTML
             elif ext in ['.html', '.htm']:
                 try:
                     with open(fpath, "r", encoding="utf-8", errors="ignore") as f:
                         content = f.read()
                 except Exception as e:
                     content = f"[Error reading HTML: {e}]"
-            
-            # STEP 4i: Handle SQL files
+            # SQL
             elif ext == '.sql':
                 try:
                     with open(fpath, "r", encoding="utf-8", errors="ignore") as f:
@@ -250,8 +317,7 @@ def main(files: List[str], output_format: str = "json"):
                     print(f"[+] Processed SQL file: {os.path.basename(fpath)}")
                 except Exception as e:
                     content = f"[Error reading SQL: {e}]"
-            
-            # STEP 4j: Handle DATA files
+            # DATA
             elif ext == '.data':
                 try:
                     with open(fpath, "r", encoding="utf-8", errors="ignore") as f:
@@ -259,50 +325,41 @@ def main(files: List[str], output_format: str = "json"):
                     print(f"[+] Processed DATA file: {os.path.basename(fpath)}")
                 except Exception as e:
                     content = f"[Error reading DATA: {e}]"
-            
-            # STEP 4k: Handle ANOM files with specialized processing
+            # ANOM
             elif ext == '.anom':
                 try:
                     with open(fpath, "r", encoding="utf-8", errors="ignore") as f:
                         content = f.read()
-                    # Process .anom files with specialized anomaly processing
                     processed_data = process_anom_data_swl(content)
                     content = processed_data
                     print(f"[+] Processed ANOM file with anomaly analysis: {os.path.basename(fpath)}")
                 except Exception as e:
                     content = f"[Error reading ANOM: {e}]"
-            
-            # STEP 4l: Handle other file types with anomaly detection
+            # Fallback/Other
             else:
                 try:
                     with open(fpath, "r", encoding="utf-8", errors="ignore") as f:
                         content = f.read()
-                    
-                    # Check if this is an anomaly data SWL file and process accordingly
                     if is_anom_data_swl_file(fpath, content):
                         processed_data = process_anom_data_swl(content)
                         content = processed_data
                         print(f"[+] Processed as anomaly data SWL file: {os.path.basename(fpath)}")
-                        
                 except Exception as e:
-                    # STEP 4m: Handle binary files as fallback
                     try:
                         with open(fpath, "rb") as f:
                             content = f"[Binary file, {len(f.read())} bytes]"
                     except Exception as e2:
                         content = f"[Could not read file: {e2}]"
-            
-            # STEP 5: Build JSON structure for each processed file
-            result = build_json_structure(
-                file_name=os.path.basename(fpath),
-                content=content
-            )
+            # NLP/NER pipeline integration
+            if isinstance(content, str) and content:
+                entities = run_ner_pipeline(content, ner_pipe)
+                result = build_json_structure(fpath, {"entities": entities, "raw_text": content})
+            else:
+                result = build_json_structure(fpath, content)
             results.append(result)
         except Exception as e:
             print(f"[!] Error processing {fpath}: {e}")
-    
-    # STEP 6: Export results to specified output format
-    export_output_per_file(results, output_format)
+    export_output_per_file(results, output_format, output_dir)
 
 
 if __name__ == "__main__":
@@ -310,37 +367,46 @@ if __name__ == "__main__":
     import tkinter as tk
     from tkinter import filedialog
 
+    # CLI/GUI logic
     root = tk.Tk()
     root.withdraw()
-    root.update()
-    file_paths = filedialog.askopenfilenames(title="Select files to process", filetypes=[
-        ("All Supported", ".txt .log .csv .xlsx .json .pptx .pdf .doc .docx .html .htm .sql .data .anom"),
-        ("Text Files", ".txt"),
-        ("SQL Files", ".sql"),
-        ("Data Files", ".data"),
-        ("Anomaly Files", ".anom"),
-        ("Log Files", ".log"),
-        ("CSV Files", ".csv"),
-        ("Excel Files", ".xlsx"),
-        ("JSON Files", ".json"),
-        ("PowerPoint Files", ".pptx"),
-        ("PDF Files", ".pdf"),
-        ("Word Files", ".doc .docx"),
+    print("Select files to process...")
+    SUPPORTED_EXTS = [
+        ("All Supported Files", "*.csv *.xlsx *.xls *.json *.txt *.pptx *.pdf *.doc *.docx *.html *.htm *.sql *.data *.anom *.zip *.tar *.tar.gz *.tgz *.rar *.7z"),
+        ("CSV Files", "*.csv"),
+        ("Excel Files", "*.xlsx;*.xls"),
+        ("JSON Files", "*.json"),
+        ("Text Files", "*.txt"),
+        ("PowerPoint Files", "*.pptx"),
+        ("PDF Files", "*.pdf"),
+        ("Word Files", "*.doc;*.docx"),
+        ("HTML Files", "*.html;*.htm"),
+        ("SQL Files", "*.sql"),
+        ("Data Files", "*.data"),
+        ("Anomaly Files", "*.anom"),
+        ("Archive Files", "*.zip;*.tar;*.tar.gz;*.tgz;*.rar;*.7z"),
         ("HTML Files", ".html .htm"),
         ("All Files", "*.*")
-    ])
+    ]
+    file_paths = filedialog.askopenfilenames(
+        title="Select files for processing",
+        filetypes=SUPPORTED_EXTS
+    )
     root.destroy()
     file_paths = list(file_paths)
     if not file_paths:
         print("[!] No files selected. Exiting.")
-        sys.exit(1)
+        sys.exit(0)
 
-
-    while True:
-        out_fmt = input("Choose output format (json/csv): ").strip().lower()
-        if out_fmt in ("json", "csv"):
-            break
+    output_format = input("Choose output format (json/csv): ").strip().lower()
+    while output_format not in ["json", "csv"]:
         print("Invalid choice. Please enter 'json' or 'csv'.")
+        output_format = input("Choose output format (json/csv): ").strip().lower()
 
-    main(file_paths, out_fmt)
+    print("Select output folder for results...")
+    output_dir = filedialog.askdirectory(title="Select output folder for results")
+    if not output_dir:
+        print("[!] No output folder selected. Exiting.")
+        sys.exit(0)
 
+    main(file_paths, output_format, output_dir)
