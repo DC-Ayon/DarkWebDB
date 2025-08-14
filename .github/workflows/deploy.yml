@@ -21,7 +21,7 @@ jobs:
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
             cd ~/darkweb
-            echo "Pulling latest changes..."
+            echo "Pulling latest changes...."
             git reset --hard
             git pull origin main
 
