@@ -34,7 +34,7 @@ jobs:
             PORT=4001 pm2 start server.js --name darkweb-backend
 
             echo "Installing frontend dependencies..."
-            cd ../frontend
+            cd ../frontend/my-next-app
             npm install
             npm run build
 
