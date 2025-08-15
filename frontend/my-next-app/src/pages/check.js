@@ -2,7 +2,7 @@
 import Header from './header';
 import { useEffect, useState } from 'react';
 
-const API = 'http://localhost:3001';
+const API = 'http://localhost:4001';
 
 export default function UserSearch() {
   const [users, setUsers] = useState([]);
