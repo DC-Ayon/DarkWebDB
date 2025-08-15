@@ -36,7 +36,7 @@ export default function Home() {
 
       {/* 🧠 Heading */}
       <h1 className="text-green-500 text-[2.5rem] sm:text-[4rem] md:text-[6rem] font-mono font-bold drop-shadow-[0_0_5px_currentColor] relative z-20 text-center">
-        Check if your data is exposed !
+        Check if your data is exposed !!!
         <span className="inline-block ml-2 w-[0.2em] h-[0.7em] bg-current align-middle animate-blink" />
       </h1>
 
