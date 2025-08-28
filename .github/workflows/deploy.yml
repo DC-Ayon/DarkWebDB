@@ -18,7 +18,7 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
-            set -e
+            set -ex
             # Install Node.js and npm if missing
             if ! command -v node &> /dev/null; then
                 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.0/install.sh | bash
@@ -52,10 +52,11 @@ jobs:
               pm2 start server.js --name "darkweb-backend" --watch --env production
             fi
             pm2 save
-            pm2 startup
+            pm2 startup || true
 
             # Frontend setup
             cd ../frontend/my-next-app
+            npm install next --save-dev
             npm ci
             npm run build
             pm2 describe darkweb-frontend > /dev/null
@@ -65,5 +66,5 @@ jobs:
               pm2 start npm --name "darkweb-frontend" -- run start -- --port 4000
             fi
             pm2 save
-            pm2 startup
+            pm2 startup || true
             pm2 save
