@@ -6,7 +6,10 @@ import getConfig from 'next/config';
 import { createPortal } from 'react-dom';
 import { FiLogOut, FiClock, FiTrash2, FiSearch, FiSettings, FiAlertCircle, FiCheckCircle, FiX, FiInfo } from 'react-icons/fi';
 
-const API = 'http://localhost:4001';
+import getConfig from 'next/config';
+const { publicRuntimeConfig = {} } = getConfig() || {};
+const basePath = publicRuntimeConfig.basePath || '/darkweb';
+const API = basePath + '/api';
 
 // --- Custom Notification System ---
 const NotificationContext = React.createContext();
@@ -1379,7 +1382,7 @@ const Header = () => {
                         aria-label="Deepcytes Homepage"
                     >
                         <img
-                            src="/1.png"
+                            src={`${basePath}/1.png`}
                             alt="Deepcytes Logo"
                             className="h-12 rounded-lg transition-transform duration-300 hover:scale-105 p-1"
                             onError={e => {

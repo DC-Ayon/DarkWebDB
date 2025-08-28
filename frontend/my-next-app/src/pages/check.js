@@ -2,7 +2,10 @@
 import Header from './header';
 import { useEffect, useState } from 'react';
 
-const API = 'http://localhost:4001';
+import getConfig from 'next/config';
+const { publicRuntimeConfig = {} } = getConfig() || {};
+const basePath = publicRuntimeConfig.basePath || '/darkweb';
+const API = basePath + '/api';
 
 export default function UserSearch() {
   const [users, setUsers] = useState([]);

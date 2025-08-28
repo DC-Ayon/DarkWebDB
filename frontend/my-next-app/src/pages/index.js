@@ -11,7 +11,7 @@ export default function Home() {
   const handleClick = () => {
     setIsExiting(true);
     setTimeout(() => {
-      router.push(basePath + "/index");
+      router.push(basePath + "/lock");
     }, 1000); // Match with animation duration
   };
 
