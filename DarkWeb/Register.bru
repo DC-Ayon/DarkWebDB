@@ -1,0 +1,15 @@
+meta {
+  name: Register
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{Host}}/login
+  body: none
+  auth: inherit
+}
+
+settings {
+  encodeUrl: true
+}

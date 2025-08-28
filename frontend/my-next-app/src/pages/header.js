@@ -5,8 +5,6 @@ import { useRouter } from 'next/navigation';
 import getConfig from 'next/config';
 import { createPortal } from 'react-dom';
 import { FiLogOut, FiClock, FiTrash2, FiSearch, FiSettings, FiAlertCircle, FiCheckCircle, FiX, FiInfo } from 'react-icons/fi';
-
-import getConfig from 'next/config';
 const { publicRuntimeConfig = {} } = getConfig() || {};
 const basePath = publicRuntimeConfig.basePath || '/darkweb';
 const API = basePath + '/api';
