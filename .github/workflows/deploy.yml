@@ -20,7 +20,8 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
-            cd ~/darkweb
+            set -e
+            cd ~/DarkWebDB
             echo "Pulling latest changes...."
             git reset --hard
             git pull origin main
@@ -31,7 +32,7 @@ jobs:
 
             echo "Restarting backend..."
             pm2 stop darkweb-backend || true
-            PORT=4001 pm2 start server.js --name darkweb-backend
+            pm2 start server.js --name darkweb-backend --watch --env production
 
             echo "Installing frontend dependencies..."
             cd ../frontend/my-next-app
@@ -40,7 +41,7 @@ jobs:
 
             echo "Restarting frontend..."
             pm2 stop darkweb-frontend || true
-            PORT=4000 pm2 start npm --name darkweb-frontend -- start
+            pm2 start npm --name darkweb-frontend -- run start -- --port 4000
 
             echo "Saving PM2 state..."
             pm2 save
