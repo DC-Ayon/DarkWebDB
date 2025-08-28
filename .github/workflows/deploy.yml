@@ -9,38 +9,99 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
 
+      - name: Create zip file of the repo to transfer
+        run: |
+          zip -r deploy.zip . -x "*.git*" "node_modules/*" ".next/*" "coverage/*"
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: deploy-package
+          path: deploy.zip
+  
+  deploy-run-and-cleanup:
+    needs: setup
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
 
-      - name: SSH & Deploy
-        uses: appleboy/ssh-action@v1.2.0
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: deploy-package
+      - name: Copy files to server
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          source: "deploy.zip"
+          target: "/home/${{ secrets.SERVER_USER }}"
+
+      - name: Run & Deploy on Server
+        uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
             set -e
-            cd ~/DarkWebDB
-            echo "Pulling latest changes...."
-            git reset --hard
-            git pull origin main
+            # Install Node.js and npm if missing
+            if ! command -v node &> /dev/null; then
+                curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.0/install.sh | bash
+                export NVM_DIR="$HOME/.nvm"
+                [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+                [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
+                nvm install 20
+                node -v
+                npm -v
+            fi
+            export PATH="$HOME/.nvm/versions/node/$(nvm version 20)/bin:$PATH"
 
-            echo "Installing backend dependencies..."
+            # Create app directory if it doesn't exist
+            mkdir -p /home/${{ secrets.SERVER_USER }}/DarkWebDB
+            cd /home/${{ secrets.SERVER_USER }}/DarkWebDB
+
+            # Check if unzip is installed, if not, install it
+            if ! command -v unzip &> /dev/null; then
+                echo "unzip could not be found, installing now..."
+                sudo apt-get update
+                sudo apt-get install -y unzip
+            fi
+
+            # Unzip the deployment package
+            unzip -o /home/${{ secrets.SERVER_USER }}/deploy.zip
+
+            # Backend setup
             cd backend
-            npm install
+            npm install pm2 -g
+            npm ci
+            pm2 describe darkweb-backend > /dev/null
+            if [ $? -eq 0 ]; then
+              pm2 restart darkweb-backend
+            else
+              pm2 start server.js --name "darkweb-backend" --watch --env production
+            fi
+            pm2 save
+            pm2 startup
 
-            echo "Restarting backend..."
-            pm2 stop darkweb-backend || true
-            pm2 start server.js --name darkweb-backend --watch --env production
-
-            echo "Installing frontend dependencies..."
+            # Frontend setup
             cd ../frontend/my-next-app
-            npm install
+            npm ci
             npm run build
+            pm2 describe darkweb-frontend > /dev/null
+            if [ $? -eq 0 ]; then
+              pm2 restart darkweb-frontend
+            else
+              pm2 start npm --name "darkweb-frontend" -- run start -- --port 4000
+            fi
+            pm2 save
+            pm2 startup
 
-            echo "Restarting frontend..."
-            pm2 stop darkweb-frontend || true
+            # Clean up
+            rm -rf /home/${{ secrets.SERVER_USER }}/deploy.zip
             pm2 start npm --name darkweb-frontend -- run start -- --port 4000
 
             echo "Saving PM2 state..."
