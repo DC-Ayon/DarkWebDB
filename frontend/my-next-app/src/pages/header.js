@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import getConfig from 'next/config';
 import { createPortal } from 'react-dom';
 import { FiLogOut, FiClock, FiTrash2, FiSearch, FiSettings, FiAlertCircle, FiCheckCircle, FiX, FiInfo } from 'react-icons/fi';
 
@@ -245,6 +246,8 @@ const SearchInput = ({ isAuthenticated, promptLogin, user }) => {
     const [pendingSearchData, setPendingSearchData] = useState(null);
     const timeoutRef = useRef(null);
     const router = useRouter();
+    const { publicRuntimeConfig = {} } = getConfig() || {};
+    const basePath = publicRuntimeConfig.basePath || '/darkweb';
 
     useEffect(() => {
         fetchAllUsers();
@@ -300,7 +303,7 @@ const SearchInput = ({ isAuthenticated, promptLogin, user }) => {
             addNotification(`Found ${filtered.length} result${filtered.length !== 1 ? 's' : ''} for "${query}"`, 'success', 3000);
 
             router.push(
-                `/search-results?query=${encodeURIComponent(query)}&results=${encodeURIComponent(
+                `${basePath}/search-results?query=${encodeURIComponent(query)}&results=${encodeURIComponent(
                     JSON.stringify(filtered)
                 )}`
             );

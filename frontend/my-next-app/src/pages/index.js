@@ -1,14 +1,17 @@
 import { useRouter } from "next/router";
+import getConfig from 'next/config';
 import { useState } from "react";
 
 export default function Home() {
   const router = useRouter();
   const [isExiting, setIsExiting] = useState(false);
 
+  const { publicRuntimeConfig = {} } = getConfig() || {};
+  const basePath = publicRuntimeConfig.basePath || '/darkweb';
   const handleClick = () => {
     setIsExiting(true);
     setTimeout(() => {
-      router.push("/index");
+      router.push(basePath + "/index");
     }, 1000); // Match with animation duration
   };
 

@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import getConfig from 'next/config';
 import Header from './header';
 
 // Search Summary Component - Shows top-level info
@@ -164,6 +165,8 @@ const UserDetails = ({ user, onClose, onBack }) => {
 
 export default function SearchResultsPage() {
   const router = useRouter();
+  const { publicRuntimeConfig = {} } = getConfig() || {};
+  const basePath = publicRuntimeConfig.basePath || '/darkweb';
   const searchParams = useSearchParams();
   const [searchResults, setSearchResults] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -181,11 +184,11 @@ export default function SearchResultsPage() {
         setSearchQuery(query);
       } catch (error) {
         console.error('Error parsing search results:', error);
-        router.push('/');
+  router.push(basePath + '/');
       }
     } else {
       // If no search data, redirect to home
-      router.push('/');
+  router.push(basePath + '/');
     }
   }, [searchParams, router]);
 
@@ -194,7 +197,7 @@ export default function SearchResultsPage() {
   };
 
   const handleCloseSearch = () => {
-    router.push('/');
+    router.push(basePath + '/');
   };
 
   const handleBackToSummary = () => {
