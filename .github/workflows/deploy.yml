@@ -8,40 +8,11 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
-      - name: Create zip file of the repo to transfer
-        run: |
-          zip -r deploy.zip . -x "*.git*" "node_modules/*" ".next/*" "coverage/*"
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: deploy-package
-          path: deploy.zip
-  
-  deploy-run-and-cleanup:
-    needs: setup
-    runs-on: ubuntu-latest
     steps:
-      - name: Use Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-
-      - name: Download artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: deploy-package
-      - name: Copy files to server
-        uses: appleboy/scp-action@master
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
-          source: "deploy.zip"
-          target: "/home/${{ secrets.SERVER_USER }}"
-
-      - name: Run & Deploy on Server
-        uses: appleboy/ssh-action@master
+      - name: Checkout repo
+        uses: actions/checkout@v4
+      - name: Deploy via SSH and git
+        uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
@@ -60,19 +31,15 @@ jobs:
             fi
             export PATH="$HOME/.nvm/versions/node/$(nvm version 20)/bin:$PATH"
 
-            # Create app directory if it doesn't exist
-            mkdir -p /home/${{ secrets.SERVER_USER }}/DarkWebDB
-            cd /home/${{ secrets.SERVER_USER }}/DarkWebDB
-
-            # Check if unzip is installed, if not, install it
-            if ! command -v unzip &> /dev/null; then
-                echo "unzip could not be found, installing now..."
-                sudo apt-get update
-                sudo apt-get install -y unzip
+            # Clone or update repo
+            if [ ! -d "/home/${{ secrets.SERVER_USER }}/DarkWebDB/.git" ]; then
+              git clone git@github.com:DC-Ayon/DarkWebDB.git /home/${{ secrets.SERVER_USER }}/DarkWebDB
+            else
+              cd /home/${{ secrets.SERVER_USER }}/DarkWebDB
+              git fetch --all
+              git reset --hard origin/main
             fi
-
-            # Unzip the deployment package
-            unzip -o /home/${{ secrets.SERVER_USER }}/deploy.zip
+            cd /home/${{ secrets.SERVER_USER }}/DarkWebDB
 
             # Backend setup
             cd backend
@@ -99,10 +66,4 @@ jobs:
             fi
             pm2 save
             pm2 startup
-
-            # Clean up
-            rm -rf /home/${{ secrets.SERVER_USER }}/deploy.zip
-            pm2 start npm --name darkweb-frontend -- run start -- --port 4000
-
-            echo "Saving PM2 state..."
             pm2 save
