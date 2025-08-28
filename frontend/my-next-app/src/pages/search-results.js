@@ -184,11 +184,11 @@ export default function SearchResultsPage() {
         setSearchQuery(query);
       } catch (error) {
         console.error('Error parsing search results:', error);
-  router.push(basePath + '/');
+  router.push('/');
       }
     } else {
       // If no search data, redirect to home
-  router.push(basePath + '/');
+  router.push('/');
     }
   }, [searchParams, router]);
 
@@ -197,7 +197,7 @@ export default function SearchResultsPage() {
   };
 
   const handleCloseSearch = () => {
-    router.push(basePath + '/');
+    router.push('/');
   };
 
   const handleBackToSummary = () => {

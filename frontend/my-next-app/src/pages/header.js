@@ -304,7 +304,7 @@ const SearchInput = ({ isAuthenticated, promptLogin, user }) => {
             addNotification(`Found ${filtered.length} result${filtered.length !== 1 ? 's' : ''} for "${query}"`, 'success', 3000);
 
             router.push(
-                `${basePath}/search-results?query=${encodeURIComponent(query)}&results=${encodeURIComponent(
+                `/search-results?query=${encodeURIComponent(query)}&results=${encodeURIComponent(
                     JSON.stringify(filtered)
                 )}`
             );
