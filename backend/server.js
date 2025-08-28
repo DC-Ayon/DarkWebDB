@@ -12,10 +12,11 @@ app.use(cors());
 app.use(bodyParser.json());
 
 const esClient = new Client({
-  node: 'https://localhost:9200',
+  node: 'https://127.0.0.1:9200',
   auth: {
     username: process.env.ES_USER || 'elastic',
-    password: process.env.ES_PASS || 'f1KxdjdqCZ7jEfjiMpFg',
+    // password: process.env.ES_PASS || 'f1KxdjdqCZ7jEfjiMpFg',
+    password: process.env.ES_PASS || 'Pass@123',
   },
   tls: {
     rejectUnauthorized: false,
