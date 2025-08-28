@@ -56,7 +56,7 @@ jobs:
 
             # Frontend setup
             cd ../frontend/my-next-app
-            npm install
+            npm ci
             npm run build
             pm2 describe darkweb-frontend > /dev/null
             if [ $? -eq 0 ]; then
