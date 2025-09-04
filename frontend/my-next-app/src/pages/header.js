@@ -7,7 +7,10 @@ import { createPortal } from 'react-dom';
 import { FiLogOut, FiClock, FiTrash2, FiSearch, FiSettings, FiAlertCircle, FiCheckCircle, FiX, FiInfo } from 'react-icons/fi';
 const { publicRuntimeConfig = {} } = getConfig() || {};
 const basePath = publicRuntimeConfig.basePath || '/darkweb';
-const API = basePath + '/api';
+const API =
+    process.env.NODE_ENV === 'development'
+        ? 'http://localhost:4001/api'
+        : (publicRuntimeConfig.basePath || '/darkweb') + '/api';
 
 // --- Custom Notification System ---
 const NotificationContext = React.createContext();
@@ -235,6 +238,7 @@ const ConfirmationModal = ({ onConfirm, onCancel, title, message }) => {
 };
 
 // --- Enhanced SearchInput component ---
+// Enhanced SearchInput component with proper error handling
 const SearchInput = ({ isAuthenticated, promptLogin, user }) => {
     const { addNotification } = useNotification();
     const [isHovered, setIsHovered] = useState(false);
@@ -261,11 +265,26 @@ const SearchInput = ({ isAuthenticated, promptLogin, user }) => {
         try {
             const res = await fetch(`${API}/users`);
             if (!res.ok) throw new Error('Failed to fetch users.');
+
             const data = await res.json();
-            setAllUsers(data);
+            console.log('API Response:', data); // Debug log
+
+            // Handle different response formats from your API
+            let usersArray = [];
+            if (data.success && Array.isArray(data.users)) {
+                usersArray = data.users;
+            } else if (Array.isArray(data)) {
+                usersArray = data;
+            } else {
+                console.warn('Unexpected API response format:', data);
+                usersArray = [];
+            }
+
+            setAllUsers(usersArray);
         } catch (err) {
             console.error('Error fetching users:', err);
             addNotification('Failed to load user data. Please try again.', 'error');
+            setAllUsers([]); // Ensure it's always an array
         }
     };
 
@@ -294,8 +313,10 @@ const SearchInput = ({ isAuthenticated, promptLogin, user }) => {
         setIsSearching(true);
         setShowSuggestions(false);
         try {
-            const filtered = allUsers
-                .filter(user => user.email.toLowerCase().includes(query.toLowerCase()))
+            // Ensure allUsers is an array before filtering
+            const usersArray = Array.isArray(allUsers) ? allUsers : [];
+            const filtered = usersArray
+                .filter(user => user.email && user.email.toLowerCase().includes(query.toLowerCase()))
                 .slice(0, 5);
 
             // Save search history if user is logged in
@@ -356,8 +377,11 @@ const SearchInput = ({ isAuthenticated, promptLogin, user }) => {
             setShowSuggestions(false);
             return;
         }
-        const matches = allUsers
-            .filter(user => user.email.toLowerCase().includes(value.toLowerCase()))
+
+        // Ensure allUsers is an array before filtering
+        const usersArray = Array.isArray(allUsers) ? allUsers : [];
+        const matches = usersArray
+            .filter(user => user.email && user.email.toLowerCase().includes(value.toLowerCase()))
             .slice(0, 3);
         setSuggestions(matches);
         setShowSuggestions(matches.length > 0);
@@ -521,6 +545,7 @@ const SearchInput = ({ isAuthenticated, promptLogin, user }) => {
         </>
     );
 };
+
 
 // --- Enhanced AuthModal component ---
 const AuthModal = ({ onClose, onLoginSuccess }) => {
@@ -898,28 +923,59 @@ const SearchHistoryForm = ({ user }) => {
     const { addNotification } = useNotification();
     const [searchHistory, setSearchHistory] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
 
     useEffect(() => {
         if (user && user.id) {
             fetchSearchHistory();
+        } else {
+            setLoading(false);
+            setError('User information not available');
         }
     }, [user]);
 
     const fetchSearchHistory = async () => {
         try {
             setLoading(true);
+            setError(null);
+
             const res = await fetch(`${API}/search-history/${user.id}`, {
                 headers: {
                     Authorization: `Bearer ${user.token}`,
                 },
             });
-            if (!res.ok) throw new Error('Failed to fetch search history');
+
+            if (!res.ok) {
+                const errorText = await res.text();
+                throw new Error(`Failed to fetch search history: ${res.status} ${errorText}`);
+            }
 
             const data = await res.json();
-            setSearchHistory(data);
+
+            // Debug logging to see what we're getting
+            console.log('Search history response:', data);
+
+            // Handle different response formats
+            let historyArray = [];
+            if (Array.isArray(data)) {
+                historyArray = data;
+            } else if (data && Array.isArray(data.history)) {
+                historyArray = data.history;
+            } else if (data && Array.isArray(data.data)) {
+                historyArray = data.data;
+            } else if (data && data.searchHistory && Array.isArray(data.searchHistory)) {
+                historyArray = data.searchHistory;
+            } else {
+                console.warn('Unexpected search history format:', data);
+                historyArray = [];
+            }
+
+            setSearchHistory(historyArray);
         } catch (err) {
-            addNotification('Error loading search history', 'error');
             console.error('Error fetching search history:', err);
+            setError(err.message);
+            addNotification('Error loading search history', 'error');
+            setSearchHistory([]); // Ensure it's always an array
         } finally {
             setLoading(false);
         }
@@ -933,18 +989,21 @@ const SearchHistoryForm = ({ user }) => {
                     Authorization: `Bearer ${user.token}`,
                 },
             });
-            if (!res.ok) throw new Error('Failed to delete history item');
+
+            if (!res.ok) {
+                const errorText = await res.text();
+                throw new Error(`Failed to delete history item: ${res.status} ${errorText}`);
+            }
 
             setSearchHistory(prev => prev.filter(item => item.id !== historyId));
             addNotification('Search history item deleted', 'success', 3000);
         } catch (err) {
-            addNotification('Error deleting history item', 'error');
             console.error('Error deleting history item:', err);
+            addNotification('Error deleting history item', 'error');
         }
     };
 
     const clearAllHistory = async () => {
-        // Custom confirmation modal would be ideal here, but for now using native confirm
         if (!confirm('Are you sure you want to clear all search history?')) return;
 
         try {
@@ -954,18 +1013,26 @@ const SearchHistoryForm = ({ user }) => {
                     Authorization: `Bearer ${user.token}`,
                 },
             });
-            if (!res.ok) throw new Error('Failed to clear search history');
+
+            if (!res.ok) {
+                const errorText = await res.text();
+                throw new Error(`Failed to clear search history: ${res.status} ${errorText}`);
+            }
 
             setSearchHistory([]);
             addNotification('All search history cleared successfully!', 'success');
         } catch (err) {
-            addNotification('Error clearing search history', 'error');
             console.error('Error clearing search history:', err);
+            addNotification('Error clearing search history', 'error');
         }
     };
 
     const formatTimestamp = (timestamp) => {
-        return new Date(timestamp).toLocaleString();
+        try {
+            return new Date(timestamp).toLocaleString();
+        } catch (err) {
+            return 'Invalid date';
+        }
     };
 
     if (loading) {
@@ -976,11 +1043,35 @@ const SearchHistoryForm = ({ user }) => {
         );
     }
 
+    if (error) {
+        return (
+            <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                    <h3 className="text-lg font-medium text-white">Search History</h3>
+                </div>
+                <div className="text-center py-8 text-red-400">
+                    <FiAlertCircle size={48} className="mx-auto mb-4 opacity-60" />
+                    <p>Failed to load search history</p>
+                    <p className="text-sm mt-1 text-red-300">{error}</p>
+                    <button
+                        onClick={fetchSearchHistory}
+                        className="mt-4 px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-300 rounded-lg transition-colors text-sm"
+                    >
+                        Try Again
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    // Ensure searchHistory is always an array before rendering
+    const safeSearchHistory = Array.isArray(searchHistory) ? searchHistory : [];
+
     return (
         <div className="space-y-4">
             <div className="flex justify-between items-center">
                 <h3 className="text-lg font-medium text-white">Search History</h3>
-                {searchHistory.length > 0 && (
+                {safeSearchHistory.length > 0 && (
                     <button
                         onClick={clearAllHistory}
                         className="text-red-400 hover:text-red-300 text-sm transition-colors flex items-center gap-1"
@@ -992,14 +1083,14 @@ const SearchHistoryForm = ({ user }) => {
             </div>
 
             <div className="overflow-y-auto max-h-[280px] space-y-2 pr-1 custom-scrollbar">
-                {searchHistory.length === 0 ? (
+                {safeSearchHistory.length === 0 ? (
                     <div className="text-center py-8 text-white/60">
                         <FiSearch size={48} className="mx-auto mb-4 opacity-30" />
                         <p>No search history yet</p>
                         <p className="text-sm mt-1">Your searches will appear here</p>
                     </div>
                 ) : (
-                    searchHistory.map(item => (
+                    safeSearchHistory.map(item => (
                         <div
                             key={item.id}
                             className="bg-white/5 border border-white/10 rounded-lg p-3 hover:bg-white/10 transition-colors"
@@ -1008,9 +1099,9 @@ const SearchHistoryForm = ({ user }) => {
                                 <div className="flex-1">
                                     <div className="flex items-center gap-2 mb-1">
                                         <FiSearch size={14} className="text-cyan-400" />
-                                        <span className="text-white font-medium text-sm">{item.query}</span>
+                                        <span className="text-white font-medium text-sm">{item.query || 'Unknown query'}</span>
                                         <span className="text-cyan-300 text-xs bg-cyan-900/30 px-2 py-1 rounded">
-                                            {item.resultsCount} results
+                                            {item.resultsCount || 0} results
                                         </span>
                                     </div>
                                     <div className="flex items-center gap-2 text-white/60 text-xs">
@@ -1031,6 +1122,7 @@ const SearchHistoryForm = ({ user }) => {
                 )}
             </div>
 
+            {/* Custom scrollbar styles */}
             <style jsx>{`
                 .custom-scrollbar::-webkit-scrollbar {
                     width: 6px;
